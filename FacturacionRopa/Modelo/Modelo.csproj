@@ -1,0 +1,88 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
+    <Platform Condition=" '$(Platform)' == '' ">x86</Platform>
+    <ProductVersion>8.0.30703</ProductVersion>
+    <SchemaVersion>2.0</SchemaVersion>
+    <ProjectGuid>{B7747ED1-149A-4092-8AF9-345CC0BFAF3B}</ProjectGuid>
+    <OutputType>Library</OutputType>
+    <AppDesignerFolder>Properties</AppDesignerFolder>
+    <RootNamespace>Modelo</RootNamespace>
+    <AssemblyName>Modelo</AssemblyName>
+    <TargetFrameworkVersion>v4.0</TargetFrameworkVersion>
+    <TargetFrameworkProfile>Client</TargetFrameworkProfile>
+    <FileAlignment>512</FileAlignment>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|x86' ">
+    <PlatformTarget>x86</PlatformTarget>
+    <DebugSymbols>true</DebugSymbols>
+    <DebugType>full</DebugType>
+    <Optimize>false</Optimize>
+    <OutputPath>bin\Debug\</OutputPath>
+    <DefineConstants>DEBUG;TRACE</DefineConstants>
+    <ErrorReport>prompt</ErrorReport>
+    <WarningLevel>4</WarningLevel>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|x86' ">
+    <PlatformTarget>x86</PlatformTarget>
+    <DebugType>pdbonly</DebugType>
+    <Optimize>true</Optimize>
+    <OutputPath>bin\Release\</OutputPath>
+    <DefineConstants>TRACE</DefineConstants>
+    <ErrorReport>prompt</ErrorReport>
+    <WarningLevel>4</WarningLevel>
+  </PropertyGroup>
+  <PropertyGroup>
+    <StartupObject />
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\BaseProgramas\LibreriaBDBase\LibreriaBDBase.csproj">
+      <Project>{635D1499-270F-4C27-A25E-4EDFBA46656F}</Project>
+      <Name>LibreriaBDBase</Name>
+    </ProjectReference>
+    <ProjectReference Include="..\..\BaseProgramas\LibreriaBDMySQL\LibreriaBDMySQL.csproj">
+      <Project>{A1A1B434-B31B-449E-B972-389C440AACBC}</Project>
+      <Name>LibreriaBDMySQL</Name>
+    </ProjectReference>
+    <ProjectReference Include="..\..\BaseProgramas\ModeloBase\ModeloBase.csproj">
+      <Project>{15395C4C-2148-4A92-A006-32B17892A5B5}</Project>
+      <Name>ModeloBase</Name>
+    </ProjectReference>
+    <ProjectReference Include="..\Signos\Utilidades.csproj">
+      <Project>{E1E330CE-5269-4CE9-A66F-35D3B2BEAC33}</Project>
+      <Name>Utilidades</Name>
+    </ProjectReference>
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="Insumo.cs" />
+    <Compile Include="InsumoOperaciones.cs" />
+    <Compile Include="Perfil.cs" />
+    <Compile Include="PerfilOperaciones.cs" />
+    <Compile Include="ProdIns.cs" />
+    <Compile Include="ProdInsOperaciones.cs" />
+    <Compile Include="ProdTalle.cs" />
+    <Compile Include="ProdTalleDescripcion.cs" />
+    <Compile Include="ProdTalleOperaciones.cs" />
+    <Compile Include="Producto.cs" />
+    <Compile Include="ProductoIVA.cs" />
+    <Compile Include="ProductoOperaciones.cs" />
+    <Compile Include="Talle.cs" />
+    <Compile Include="TalleOperaciones.cs" />
+    <Compile Include="TasaIVA.cs" />
+    <Compile Include="TasaIVAOperaciones.cs" />
+    <Compile Include="Usuario.cs" />
+    <Compile Include="UsuarioOperaciones.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <Reference Include="System" />
+  </ItemGroup>
+  <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+  <!-- To modify your build process, add your task inside one of the targets below and uncomment it. 
+       Other similar extension points exist, see Microsoft.Common.targets.
+  <Target Name="BeforeBuild">
+  </Target>
+  <Target Name="AfterBuild">
+  </Target>
+  -->
+</Project>

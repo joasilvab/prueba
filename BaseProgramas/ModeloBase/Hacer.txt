@@ -1,0 +1,6 @@
+﻿excepciones modelo
+excepciones base
+cambiar constructo para que tome nombre
+verificar que existan las propiedades en el agregar columna valor
+verificar los parametros que se pasan como null (ej tabla en los obtener, bah en realidad no porque tabla viene de crear un modelo)
+hacer el campoPropiedades como const (tal vez en cada xOperaciones, agregar un const de tipo campoPropiedad)
