@@ -1,0 +1,1 @@
+﻿Agregar tipo un TOP 1 para que cuando haga la consulta devuelva solo uno

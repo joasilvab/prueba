@@ -16,14 +16,40 @@ namespace LibreriaBD
             _connection = new MySqlConnection(_connectionString);
         }
 
-        public ClaseLibreriaBDMySQL(string server, string db, bool integratedSecurity)
+        private BaseDatosException LanzarExcepcion(MySqlException exc)
         {
-            _connectionString = string.Format("Data Source={0};", server);
-            _connectionString += "Integrated Security=";
-            _connectionString += integratedSecurity ? "SSPI" : "No";
-            _connectionString += ";Initial Catalog=" + db;
+            switch (exc.Number)
+            {
+                case 1042:
+                    return new BaseDatosSinConexionException(exc.Message);
+            }
+            return new BaseDatosException(exc.Message);
+        }
+
+        public ClaseLibreriaBDMySQL(string server, string db, string user, string pass)
+        {
+            _connectionString = string.Format("Server={0};Database={1};Uid={2};Pwd={3}", server, db, user, pass);
             _connection = new MySqlConnection(_connectionString);
-            _adapter = new MySqlDataAdapter();
+        }
+
+        public bool ProbarConexion()
+        {
+            try
+            {
+                _connection.Open();
+                return true;
+            }
+            catch (MySqlException e)
+            {
+                if (e.Number == 1042)
+                    throw new BaseDatosSinConexionException(e.Message);
+                else
+                    throw new BaseDatosSinConexionException(e.InnerException.Message);
+            }
+            finally
+            {
+                _connection.Close();
+            }
         }
 
         string _connectionString;
@@ -45,6 +71,30 @@ namespace LibreriaBD
         {
             _adapter = new MySqlDataAdapter();
             _command = new MySqlCommand("SELECT * from " + tabla, _connection);
+            _command.CommandType = CommandType.Text;
+            _adapter.SelectCommand = _command;
+            DataTable dt = new DataTable();
+            try
+            {
+                _adapter.Fill(dt);
+            }
+            catch (MySqlException exc)
+            {
+                throw LanzarExcepcion(exc);
+            }
+            return dt;
+        }
+
+        public override DataTable ObtenerTodos(string tabla, List<string> campos)
+        {
+            _adapter = new MySqlDataAdapter();
+            string camposstring ="";
+            foreach (string s in campos)
+            {
+                camposstring += s + ",";
+            }
+            camposstring = RemoverUltimosCaracteres(camposstring, 1);
+            _command = new MySqlCommand("SELECT "+camposstring+" from " + tabla, _connection);
             _command.CommandType = CommandType.Text;
             _adapter.SelectCommand = _command;
             DataTable dt = new DataTable();
@@ -74,11 +124,11 @@ namespace LibreriaBD
         }*/
         public override List<Dictionary<string,object>> EjecutarConsulta(string consulta)
         {
+            List<Dictionary<string, object>> devolver = new List<Dictionary<string, object>>();
+            _command = _connection.CreateCommand();
+            _command.CommandText = consulta;
             try
             {
-                List<Dictionary<string, object>> devolver = new List<Dictionary<string, object>>();
-                _command = _connection.CreateCommand();
-                _command.CommandText = consulta;
                 _connection.Open();
                 MySqlDataReader sqldr = _command.ExecuteReader();
                 while (sqldr.Read())
@@ -90,7 +140,6 @@ namespace LibreriaBD
                     }
                     devolver.Add(dict);
                 }
-                _connection.Close();
                 return devolver;
             }
             catch (Exception exc)
@@ -211,7 +260,7 @@ namespace LibreriaBD
         /// <param name="camposValoresWhere">Dictionary donde se indica key = valor para el WHERE (ej. desc = 'Descripcion')</param>
         /// <param name="camposCamposWhere">Dictionary donde se indica campo = otrocampo (es como el anterior pero le saca las comillas, ej. tabla1.campo = tabla2.campo)</param>
         /// <returns>Devuelve un Dictionary donde las keys son los nombre de los campos y los valores, son los valores de esos campos</returns>
-        public override List<Dictionary<string, object>> Select(bool distinct, List<string> campos, List<string> tablasFrom, Dictionary<string, string> camposValoresWhere,Dictionary<string, string> camposCamposWhere)
+        public override List<Dictionary<string, object>> Select(bool distinct, List<string> campos, List<string> tablasFrom, List<ValorWhere> listaCondiciones)
         {
             if (campos == null)
                 throw new ArgumentNullException("campos");
@@ -224,23 +273,28 @@ namespace LibreriaBD
             consulta = consulta.Remove(consulta.Length - 1) + "FROM ";
             foreach (string s in tablasFrom) consulta += s + " ,";
             consulta = consulta.Remove(consulta.Length - 1);
-            if ((camposValoresWhere != null) || (camposCamposWhere != null))
+            if (listaCondiciones != null && listaCondiciones.Count > 0)
             {
                 consulta += "WHERE ";
-                if (camposValoresWhere != null)
-                    foreach (string s in camposValoresWhere.Keys)
-                    {
-                        object valor = camposValoresWhere[s];
-                        if (valor == null)
-                        consulta += string.Format("{0} is NULL AND ", s);
-                        else
-                            consulta += string.Format("{0}='{1}' AND ", s, camposValoresWhere[s]);
-                    }
-                if (camposCamposWhere != null)
-                    foreach (string s in camposCamposWhere.Keys)
-                    {
-                        consulta += string.Format("{0}={1} AND ", s, camposCamposWhere[s]);
-                    }
+                foreach (ValorWhere vw in listaCondiciones)
+                {
+                    consulta += GenerarCondicion(vw);
+                    consulta += " AND ";
+                }
+                //if (camposValoresWhere != null)
+                //    foreach (string s in camposValoresWhere.Keys)
+                //    {
+                //        object valor = camposValoresWhere[s];
+                //        if (valor == null)
+                //        consulta += string.Format("{0} is NULL AND ", s);
+                //        else
+                //            consulta += string.Format("{0}='{1}' AND ", s, camposValoresWhere[s]);
+                //    }
+                //if (camposCamposWhere != null)
+                //    foreach (string s in camposCamposWhere.Keys)
+                //    {
+                //        consulta += string.Format("{0}={1} AND ", s, camposCamposWhere[s]);
+                //    }
                 consulta = consulta.Remove(consulta.Length - 4);
             }
             return EjecutarConsulta(consulta);
@@ -307,16 +361,20 @@ namespace LibreriaBD
             }
         }
 
-        public override DataTable Obtener(string tabla, List<string> listaCampos, List<string> listaDatos)
+        public override DataTable Obtener(string tabla, List<ValorWhere> condiciones)
         {
-            string consulta = "SELECT * FROM " + tabla + " WHERE ";
-            foreach (string cd in listaCampos)
+            string consulta = "SELECT * FROM " + tabla;
+            if (condiciones != null && condiciones.Count > 0)
             {
-                consulta += string.Format("({0} = '{1}') ", cd, listaDatos[listaCampos.IndexOf(cd)]);
-                if (!(listaCampos.Last() == cd))
-                    consulta += "AND ";
+                consulta += " WHERE ";
+                foreach (ValorWhere vw in condiciones)
+                {
+                    consulta += GenerarCondicion(vw) + " AND ";
+                }
+                consulta = RemoverUltimosCaracteres(consulta, 4);
             }
-            _adapter.SelectCommand = new MySqlCommand(consulta, _connection);
+            _adapter = new MySqlDataAdapter(consulta, _connection);
+            //_adapter.SelectCommand = new MySqlCommand(consulta, _connection);
             DataTable dt = new DataTable();
             try
             {
@@ -334,19 +392,28 @@ namespace LibreriaBD
             }
         }
 
-        public override Dictionary<string,object> ObtenerUltimo(string tabla,string campoUltimo, Dictionary<string, string> valoresWhere)
+        public override Dictionary<string,object> ObtenerUltimo(string tabla,string campoUltimo, List<ValorWhere> valoresWhere)
         {
-            string consulta = "SELECT TOP(1) * from " + tabla;
-            if (valoresWhere != null && valoresWhere.Count()!=0 )
+            string consulta = "SELECT * from " + tabla;
+            if (valoresWhere != null && valoresWhere.Count == 0)
             {
-                consulta += " where ";
-                foreach (string key in valoresWhere.Keys)
+                consulta += " WHERE ";
+                foreach (ValorWhere vw in valoresWhere)
                 {
-                    consulta += string.Format("({0}='{1}') and", key, valoresWhere[key]);
+                    consulta += GenerarCondicion(vw) + " and ";
                 }
-                consulta = consulta.Remove(consulta.Length - 3);
+                consulta = RemoverUltimosCaracteres(consulta, 4);
             }
-            consulta +=" order by " + campoUltimo + " DESC";
+            //if (valoresWhere != null && valoresWhere.Count()!=0 )
+            //{
+            //    consulta += " where ";
+            //    foreach (string key in valoresWhere.Keys)
+            //    {
+            //        consulta += string.Format("({0}='{1}') and", key, valoresWhere[key]);
+            //    }
+            //    consulta = consulta.Remove(consulta.Length - 3);
+            //}
+            consulta +=" order by " + campoUltimo + " DESC LIMIT 1";
             try
             {
                 List<Dictionary<string, object>> ld = EjecutarConsulta(consulta);
@@ -361,15 +428,15 @@ namespace LibreriaBD
             }
         }
 
-        public override Dictionary<string,object> ObtenerEnDictionary(string tabla, List<string> listaCampos, List<string> listaDatos)
+        public override Dictionary<string,object> ObtenerEnDictionary(string tabla, List<ValorWhere> listaCondiciones)
         {
             string consulta = "SELECT * FROM " + tabla + " WHERE ";
-            foreach (string cd in listaCampos)
+            foreach (ValorWhere ve in listaCondiciones)
             {
-                consulta += string.Format("({0} = '{1}') ", cd, listaDatos[listaCampos.IndexOf(cd)]);
-                if (!(listaCampos.Last() == cd))
-                    consulta += "AND ";
+                consulta += GenerarCondicion(ve)+" and ";
             }
+            consulta = consulta.Remove(consulta.Length - 4)+" LIMIT 1";
+
             try
             {
                 List<Dictionary<string, object>> ld = EjecutarConsulta(consulta);
@@ -382,6 +449,10 @@ namespace LibreriaBD
             {
                 if (exc.Number == 245)
                     throw new Exception("El tipo de dato ingresado no es correcto");
+                if (exc.Number == 1042)
+                {
+                    throw new LibreriaBD.BaseDatosSinConexionException(exc.Message);
+                }
                 else
                 {
                     throw new Exception("Mensaje: " + exc.Message + "\n\n" + "Consulta: " + consulta);
@@ -393,38 +464,75 @@ namespace LibreriaBD
             }
         }
 
+        public string GenerarUpdate(string tabla, List<ValorUpdate> listaUpdates, List<ValorWhere> condiciones)
+        {
+            string devolver = "UPDATE " + tabla + " SET ";
+            foreach (ValorUpdate vu in listaUpdates)
+            {
+                devolver += vu.Campo + "=" + (vu.ValorComillas ? "'" + vu.ValorNuevo + "'" : vu.ValorNuevo) + ",";
+            }
+            devolver = RemoverUltimosCaracteres(devolver, 1);
+            if (condiciones != null && condiciones.Count > 0)
+            {
+                devolver += " WHERE ";
+                foreach (ValorWhere vw in condiciones)
+                {
+                    devolver += GenerarCondicion(vw);
+                    devolver += " AND ";
+                }
+                devolver = RemoverUltimosCaracteres(devolver, 4);
+            }
+            return devolver+";";
+        }
+
         public override int Modificar(string tabla, List<ValorUpdate> valoresUpdate, List<ValorWhere> valoresWhere)
         {
             if (tabla == null)
                 throw new ArgumentNullException("tabla");
             if (valoresUpdate == null || valoresUpdate.Count == 0)
                 throw new ArgumentNullException("lvu");
-            string consulta = "update " + tabla + " set ";
-            foreach (ValorUpdate vu in valoresUpdate)
-            {
-                consulta += vu.Campo + "="+(vu.ValorComillas?"'"+vu.ValorNuevo+"'":vu.ValorNuevo)+" ";
-            }
-            if (valoresWhere.Count != 0)
-            {
-                consulta += " where ";
-                foreach (ValorWhere vw in valoresWhere)
-                {
-                    consulta += vw.ValorIzquierdaComillas ? string.Format("'{0}'", vw.ValorIzquierda) : vw.ValorIzquierda;
-                    consulta += vw.Signo;
-                    consulta += vw.ValorDerechaComillas ? string.Format("'{0}'", vw.ValorDerecha) : vw.ValorDerecha;
-                    consulta += " and ";
-                }
-                consulta = consulta.Remove(consulta.Length - 4);
-            }
+            //string consulta = "update " + tabla + " set ";
+            //foreach (ValorUpdate vu in valoresUpdate)
+            //{
+            //    consulta += vu.Campo + "="+(vu.ValorComillas?"'"+vu.ValorNuevo+"'":vu.ValorNuevo)+",";
+            //}
+            //consulta = RemoverUltimosCaracteres(consulta, 1);
+            //if (valoresWhere.Count != 0)
+            //{
+            //    consulta += " where ";
+            //    foreach (ValorWhere vw in valoresWhere)
+            //    {
+            //        consulta += vw.ValorIzquierdaComillas ? string.Format("'{0}'", vw.ValorIzquierda) : vw.ValorIzquierda;
+            //        consulta += vw.Signo;
+            //        consulta += vw.ValorDerechaComillas ? string.Format("'{0}'", vw.ValorDerecha) : vw.ValorDerecha;
+            //        consulta += " and ";
+            //    }
+            //    consulta = consulta.Remove(consulta.Length - 4);
+            //}
+            string consulta = GenerarUpdate(tabla, valoresUpdate, valoresWhere);
             _command = new MySqlCommand(consulta, _connection);
             try
             {
                 _connection.Open();
                 return _command.ExecuteNonQuery();
             }
-            catch (Exception exc)
+            catch (MySqlException exc)
             {
-                throw exc;
+                if (exc.Number == 1062)
+                {
+                    string m = exc.Message;
+                    string a = m.Substring(m.IndexOf('\'') + 1);
+                    string valor = a.Remove(a.IndexOf('\''));
+                    string c = a.Substring(a.IndexOf('\'') + 1);
+                    string d = c.Substring(c.IndexOf('\'') + 1);
+                    string campo = d.Remove(d.IndexOf('\''));
+                    throw new BaseDatosEntradaDuplicadaException(valor, campo);
+                    //exc.Message.Substring(esc.me
+                }
+                else
+                {
+                    throw exc;
+                }
             }
             finally
             {
@@ -446,6 +554,19 @@ namespace LibreriaBD
             {
                 if (exc.Number == 2627)
                     throw new Exception("Ya existe un elemento con este Id. Por favor cámbielo y vuelva a intentarlo");
+                if (exc.Number == 1062)
+                {
+                    //string m = exc.Message;
+                    //string a = m.Substring(m.IndexOf('\'')+1);
+                    //string valor = a.Remove(a.IndexOf('\''));
+                    //string c = a.Substring(a.IndexOf('\'')+1);
+                    //string d = c.Substring(c.IndexOf('\'')+1);
+                    //string campo = d.Remove(d.IndexOf('\''));
+                    string valor, campo;
+                    ObtenerValorCampoDuplicado(exc.Message, out valor, out campo);
+                    throw new BaseDatosEntradaDuplicadaException(valor, campo);
+                    //exc.Message.Substring(esc.me
+                }
                 else
                 {
                     throw new Exception("Mensaje: " + exc.Message + "\n\n" + "Consulta: " + consulta);
@@ -457,9 +578,52 @@ namespace LibreriaBD
             }
         }
 
+        void ObtenerValorCampoDuplicado(string mensageException, out string valor, out string campo)
+        {
+            string m = mensageException;
+            string a = m.Substring(m.IndexOf('\'') + 1);
+            valor = a.Remove(a.IndexOf('\''));
+            string c = a.Substring(a.IndexOf('\'') + 1);
+            string d = c.Substring(c.IndexOf('\'') + 1);
+            campo = d.Remove(d.IndexOf('\''));
+        }
+
         public override void Insertar(List<ObjetoInsert> listaInserts)
         {
-            throw new NotImplementedException();
+            if (listaInserts == null || listaInserts.Count == 0)
+                throw new ArgumentNullException("listaInserts");
+            string consulta = "";
+            foreach (ObjetoInsert oi in listaInserts)
+            {
+                consulta += GenerarInsertInto(oi);
+            }
+            _command = new MySqlCommand(consulta, _connection);
+            try
+            {
+                _connection.Open();
+                _command.ExecuteNonQuery();
+            }
+            catch (MySqlException exc)
+            {
+                if (exc.Number == 2627)
+                    throw new Exception("Ya existe un elemento con este Id. Por favor cámbielo y vuelva a intentarlo");
+                if (exc.Number == 1062)
+                {
+                    string valor, campo;
+                    ObtenerValorCampoDuplicado(exc.Message, out valor, out campo);
+                    throw new BaseDatosEntradaDuplicadaException(valor, campo);
+                 
+                }
+                else
+                {
+                    throw new Exception("Mensaje: " + exc.Message + "\n\n" + "Consulta: " + consulta);
+                }
+            }
+            finally
+            {
+                _connection.Close();
+            }
+            
         }
 
         public override void EliminarVarios(List<ObjetoDelete> listaDeletes)
@@ -472,13 +636,13 @@ namespace LibreriaBD
             throw new NotImplementedException();
         }
 
-        string GenerarInsertInto(ObjetoInsert ins)
+        public string GenerarInsertInto(ObjetoInsert ins)
         {   
             string devolver=null, into = null, values = null;
             for(int i= 0; i<ins.ValoresInsert.Count;i++)
             {
-                into = ins.ValoresInsert[i].Into;
-                values = ins.ValoresInsert[i].Value;
+                into += ins.ValoresInsert[i].Into;
+                values += ins.ValoresInsert[i].ValueComillas? "'"+ins.ValoresInsert[i].Value+"'":ins.ValoresInsert[i].Value;
                 if (i != ins.ValoresInsert.Count - 1)
                 {
                     into += ",";
@@ -494,7 +658,10 @@ namespace LibreriaBD
             string devolver = "";
             devolver += valor.ValorIzquierdaComillas ? string.Format("'{0}'", valor.ValorIzquierda) : valor.ValorIzquierda;
             devolver += valor.Signo;
-            devolver += valor.ValorDerechaComillas ? string.Format("'{0}'", valor.ValorDerecha) : valor.ValorDerecha;
+            if (valor.ValorDerecha == null)
+                devolver += "NULL";
+            else
+                devolver += valor.ValorDerechaComillas ? string.Format("'{0}'", valor.ValorDerecha) : valor.ValorDerecha;
             return devolver;
         }
 
@@ -557,7 +724,7 @@ namespace LibreriaBD
             return cadena.Remove(cadena.Length - cant);
         }
 
-        string GenerarDeleteFrom(ObjetoDelete od)
+        public string GenerarDeleteFrom(ObjetoDelete od)
         {
             string whereCadena = "";
             foreach (ValorWhere vw in od.ListaValoresWhere)
@@ -573,6 +740,46 @@ namespace LibreriaBD
             MySqlDataAdapter da = new MySqlDataAdapter("SELECT * from " + tabla, _connection);
             DataTable dt = new DataTable();
             return da.FillSchema(dt, SchemaType.Source);
-        }        
+        }
+
+        public void Transaction(List<string> listaSentencias)//Creo que debe ser static
+        {
+            string consulta = "";
+            foreach (string s in listaSentencias)
+            {
+                consulta += s;
+            }
+            _command = new MySqlCommand(consulta, _connection);
+            _connection.Open();
+            MySqlTransaction trans = _connection.BeginTransaction();
+            _command.Transaction = trans;
+            try
+            {
+                _command.ExecuteNonQuery();
+                trans.Commit();
+            }
+            catch (MySqlException mysqlex)
+            {
+                switch (mysqlex.Number)
+                {
+                    case 1062:
+                        string campo, valor;
+                        ObtenerValorCampoDuplicado(mysqlex.Message, out valor, out campo);
+                        throw new BaseDatosEntradaDuplicadaException(valor, campo);
+                    default:
+                        throw new Exception(mysqlex.Message);
+                }
+            }
+            catch (Exception exc)
+            {
+                trans.Rollback();
+                throw exc;
+            }
+            finally
+            {
+                _connection.Close();
+            }
+            
+        }
     }
 }
